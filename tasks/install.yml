@@ -1,8 +1,17 @@
 ---
-- name: TIMESCALEDB | Be sure timescaledb key is present
-  apt_key:
+
+- name: TIMESCALEDB | Download timescaledb key
+  get_url:
     url: "{{ timescaledb_deb_key }}"
-    state: present
+    dest: /tmp/timescaledb.gpg.key
+    mode: '0644'
+
+- name: TIMESCALEDB | Import timescaledb key
+  command: "gpg --dearmor -o /etc/apt/trusted.gpg.d/timescaledb.gpg /tmp/timescaledb.gpg.key"
+  args:
+    creates: /etc/apt/trusted.gpg.d/timescaledb.gpg
+  become: true
+  changed_when: false
 
 - name: TIMESCALEDB | Be sure timescaledb repo packages configured
   apt_repository:
