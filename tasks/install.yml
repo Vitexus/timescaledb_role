@@ -1,17 +1,89 @@
----
-- name: TIMESCALEDB | Be sure timescaledb key is present
-  apt_key:
-    url: "{{ timescaledb_deb_key }}"
-    state: present
+# Install TimescaleDB with automatic source selection
+#
+# Logic:
+# 1) If explicit versions are provided (timescaledb_version / timescaledb_pg_extension_version / timescaledb_pg_major)
+#    → try to install exactly those packages from available APT sources
+# 2) If not provided → install default version available in native Debian repos
+# 3) packagecloud.io is added ONLY if required packages are not available natively
+#    (and Debian < 13, because packagecloud does not support Debian 13 yet)
 
-- name: TIMESCALEDB | Be sure timescaledb repo packages configured
-  apt_repository:
+- name: TIMESCALEDB | Detect PostgreSQL major from APT
+  ansible.builtin.shell: |
+    apt-cache search '^postgresql-[0-9]+$' \
+      | sed -n 's/^postgresql-\([0-9]\+\).*/\1/p' \
+      | sort -nr | head -1
+  register: detected_pg_major
+  changed_when: false
+
+- name: TIMESCALEDB | Set effective PostgreSQL major
+  ansible.builtin.set_fact:
+    timescaledb_pg_major_effective: >-
+      {{
+        timescaledb_pg_major
+        | default(detected_pg_major.stdout, true)
+        | default('17', true)
+      }}
+
+- name: TIMESCALEDB | Build package name list
+  ansible.builtin.set_fact:
+    timescaledb_packages:
+      - "postgresql-{{ timescaledb_pg_major_effective }}-timescaledb"
+
+- name: TIMESCALEDB | Check availability of requested packages in native APT
+  ansible.builtin.shell: |
+    set -e
+    for pkg in {{ timescaledb_packages | join(' ') }}; do
+      apt-cache policy "$pkg" | grep -q Candidate || exit 1
+    done
+  register: timescaledb_native_check
+  changed_when: false
+  failed_when: false
+
+- name: TIMESCALEDB | Set fact if native packages are available
+  ansible.builtin.set_fact:
+    timescaledb_native_available: "{{ timescaledb_native_check.rc == 0 }}"
+
+- name: TIMESCALEDB | Decide if packagecloud.io repo is required
+  ansible.builtin.set_fact:
+    timescaledb_use_packagecloud: >-
+      {{
+        (not timescaledb_native_available)
+        and (ansible_distribution == 'Debian')
+        and (ansible_distribution_major_version | int < 13)
+      }}
+
+- name: TIMESCALEDB | Fail only if user-requested version is not satisfiable on Debian 13
+  ansible.builtin.fail:
+    msg: >-
+      Requested TimescaleDB version {{ timescaledb_pg_extension_version }}
+      is not available in native Debian {{ ansible_distribution_major_version }}
+      and packagecloud.io does not support Debian 13.
+  when:
+    - ansible_distribution == 'Debian'
+    - ansible_distribution_major_version | int >= 13
+    - not timescaledb_native_available
+    - >
+      (timescaledb_version | default('', true) | length > 0)
+      or
+      (timescaledb_pg_extension_version | default('', true) | length > 0)
+
+- name: TIMESCALEDB | Add packagecloud.io repository (Debian < 13 only)
+  ansible.builtin.apt_repository:
     repo: "{{ timescaledb_deb_repo }}"
     state: present
-    filename: "timescaledb"
+    filename: timescaledb
+    codename: "{{ ansible_distribution_release }}"
+    update_cache: true
+  when: timescaledb_use_packagecloud
 
-- name: TIMESCALEDB | Be sure timescaledb packages are installed
-  apt:
-    name: "{{ timescaledb_release_name }}"
+- name: TIMESCALEDB | Remove packagecloud repo on Debian 13+
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/timescaledb.list
+    state: absent
+  when: timescaledb_use_packagecloud is false
+
+- name: TIMESCALEDB | Install TimescaleDB packages
+  ansible.builtin.apt:
+    name: "{{ timescaledb_packages }}"
     state: present
     update_cache: true

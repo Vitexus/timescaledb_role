@@ -1,19 +1,43 @@
 ---
-## General
+## General defaults
+## IMPORTANT:
+## Versions are intentionally UNDEFINED by default.
+## They are auto-detected from APT in install.yml unless explicitly set by the user.
 
-# Version
-timescaledb_version: "2-2.1.0"
-timescaledb_pg_extension_version: "2.1.0"
-timescaledb_pg_major: 12
+# Versioning (auto-detected if undefined)
+timescaledb_version: null
+timescaledb_pg_extension_version: null
+timescaledb_pg_major: null
+
 timescaledb_pg_port: 5432
 
-# Package
-## Available versions https://packagecloud.io/timescale/timescaledb
-timescaledb_deb_repo: "deb https://packagecloud.io/timescale/timescaledb/debian {{ ansible_distribution_release }} main"
+# Package source handling
+# Native Debian repo is preferred.
+# packagecloud.io is used ONLY when explicitly required and supported.
+timescaledb_use_packagecloud: false
+
+# packagecloud settings (used only if enabled explicitly)
+timescaledb_deb_repo: "deb https://packagecloud.io/timescale/timescaledb {{ ansible_distribution_release }} main"
 timescaledb_deb_key: "https://packagecloud.io/timescale/timescaledb/gpgkey"
-timescaledb_release_name: "timescaledb-{{ timescaledb_version }}-postgresql-{{ timescaledb_pg_major }}"
+
+# Computed internally when using packagecloud
+timescaledb_release_name: null
 
 timescaledb_private_tmp: true
+
+## Multinode defaults
+timescaledb_multinode_enabled: false
+timescaledb_multinode_access_node: ""
+timescaledb_multinode_data_nodes: []
+
+## Multinode authentication
+timescaledb_multinode_password_authentication_enabled: false
+timescaledb_multinode_pgpass_template_file: .pgpass.j2
+timescaledb_multinode_pgpass_path: /var/lib/postgresql
+
+## Hostname resolution method
+timescaledb_multinode_access_node_resolution_method: "{{ inventory_hostname }}"
+
 timescaledb_autotune: false
 
 # Posgtresql config
@@ -23,17 +47,4 @@ timescaledb_pg_database: "timescaledb"  # Database in which to install timescale
 timescaledb_pg_conf:
   - shared_preload_libraries: "'timescaledb'"
   - timescaledb.telemetry_level: "off"
-#  - timescaledb.passfile: "'{{ timescaledb_multinode_pgpass_path }}/.pgpass'" # Mandatory if you want to enable password authentication in a multi-node installation
-
-# Timescaledb multinode defaults
-timescaledb_multinode_enabled: false
-timescaledb_multinode_access_node: ""
-timescaledb_multinode_data_nodes: []
-
-# Timescaledb multinode authentication
-timescaledb_multinode_password_authentication_enabled: false
-timescaledb_multinode_pgpass_template_file: .pgpass.j2
-timescaledb_multinode_pgpass_path: /var/lib/postgresql
-
-## We use this variable to avoid fqdn/ptr resolution incompatibilities.
-timescaledb_multinode_access_node_resolution_method: "{{ inventory_hostname }}" # ansible_hosntame, ansible_nodename, inventory_hostname, etc.
+  # - timescaledb.passfile: "'{{ timescaledb_multinode_pgpass_path }}/.pgpass'" # Mandatory if you want to enable password authentication in a multi-node installation
